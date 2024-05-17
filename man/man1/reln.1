@@ -1,0 +1,179 @@
+.TH RELN 1 2024 RELN\ 0.1.0
+
+.SH NAME
+reln \- recreate symlinks adjusting paths to their targets
+
+.SH SYNOPSIS
+.SY
+\fBreln\fR [<options>] <link|file> <dir|link>
+
+\fBreln\fR [<options>] <link|file> ... <dir> 
+.YS
+
+.SH DESCRIPTION
+\fBreln\fR allows the user to copy symlinks to a specified location, and adjust their targets such that they still point to the same files as the original links. The original links may then be removed. This allows the symlinks to be moved and copied in effectively the same way as one would do with the \fBmv\fR and \fBcp\fR commands when moving and copying regular files and directories, without needing to worry about adjusting the targets or the links according to their new location.
+
+\fBreln\fR also provides options for converting relative target paths to absolute ones, and vice versa. Entirely new symlinks can also be created with \fBreln\fR by passing regular files or directories instead of links as positional arguments.
+
+\fBreln\fR takes one or more links or non-link files as positional arguments (<link|file>), while the last positional argument following all the <link|file>s is the destination (<dir>, <dir|link>), i.e. the location for the new link(s).
+
+If two or more <link|file>s are passed, then the destination must be a directory (<dir>). If only one <link|file> is passed, then the second and last positional argument may also point to a new name for the link to be created (<dir|link>), in which case the provided path may include a path to a destination directory as well as the filename for the new link. In either case, the destination directory must exist.
+
+.SH OPTIONS
+
+.SS Passing arguments to options
+
+Enhanced \fBgetopt\fR syntax applies when passing options. There is one important point to highlight when it comes to passing options with required vs optional arguments.
+
+In case of a short option, if an option takes a *required* argument, the argument may be written as a separate parameter, *or* directly after the option character. If an option takes an *optional* argument, however, the argument *must* be written directly after the option character.
+
+In case of a long option, if an option takes a *required* argument, the argument may be written as a separate parameter, *or* directly after the option name, separated by an equals sign (`=`). If an option takes an *optional* argument, however, the argument *must* be writtent directly after the option name, separated by an equals sign (`=`).
+
+.TS
+tab(|);
+l l l .
+|Short option|Long option
+Required argument|\fB-o\fR <value>|\fB--option\fR <value>
+|\fB-o\fR<value>|\fB--option\fR=<value>
+Optional argument|\fB-o\fR[<value>]|\fB--option\fR[=<value>]
+.TE
+
+Options that take optional arguments can be recognized in the options list below by their <value> and the preceding equals sign being enclosed in square brackets:
+
+.EX
+\fB-o, --option\fR[=<value>]
+.EE
+
+.SS General
+
+.TP
+.B -r, --run
+Perform the specified operations instead of simulating them.
+
+.TP
+.B -R, --no-run
+Simulate the specified operations instead of performing them. This is the default.
+
+.TP
+.B -p, --print-cmd
+Print a preview of the commands to be executed.
+
+.TP
+.B -P, --no-print-cmd
+Do not print a preview of the commands to be executed. This is the default.
+
+.TP
+.B -k, --keep-original
+Keep original symlinks.
+
+.TP
+.B -K, --no-keep-original
+Do not keep original symlinks. Delete them. This is the default.
+
+.TP
+.B -y, --overwrite
+Overwrite already existing files.
+
+.TP
+.B -Y, --no-overwrite
+Do not overwrite already existing files. This is the default.
+
+.TP
+.B -m, --mode\fR={link|relink}
+Mode of operation.
+
+.RS
+.TP
+link
+Create links to specified <link|file>s regardless of whether they are links or non-link files.
+.TP
+relink (default)
+Relink <link|file>s if they are links, and create links to them if they are non-link files.
+.RE
+
+.TP
+.B -l, --link-type\fR={relative|absolute|auto}
+Type of links to create.
+
+.RS
+.TP
+relative
+Create relative links.
+.TP
+absolute
+Create absolute links.
+.TP
+auto (default)
+If <link|file> is a link, create a link of the type corresponding to the type of the original link's target path. If <link|file> is a non-link file, create a link of the type that is determined by \fB--link-type-auto-files-method\fR.
+.RE
+
+.TP
+.B --link-type-auto-files-method\fR={fallback|auto}
+Method for creating links when \fB-l, --link-type\fR is `auto`, and <link|file> is a non-link file.
+
+.RS
+.TP
+fallback
+Create a link of the type determined by \fB--link-type-auto-files-fallback\fR.
+.TP
+auto
+Create a link of the type corresponding to type of path to <file> passed to \fBreln\fR.
+.RE
+
+.TP
+.B --link-type-auto-files-fallback\fR={relative|absolute}
+Type of link to <file> when \fB--link-type-auto-files-method\fR is `fallback`. The default value is `relative`.
+
+.TP
+.B -L, --dereference-targets\fR[={<integer>|inf}]
+Dereference link targets to a specified level. The default value is `0`.
+
+The value can be an integer greater than or equal to 0, `inf`, or no value. Omitting the value is equivalent to passing `inf`. 
+
+.SS Other
+
+.TP
+.B -c, --color
+Colorize the output. This is the default.
+
+.TP
+.B -C, --no-color
+Disable colorization of the output.
+
+.TP
+.B -h, --help
+Print help.
+
+.TP
+.B -V, --version
+Print version information.
+
+.SH EXIT STATUS
+
+.TS
+tab(|);
+l l .
+0|Success. No errors have occured.
+1|A general error has occured.
+2|Some links could not be created.
+.TE
+
+.SH FILES
+
+A configuration file can be used to set default options.
+
+The configuration file's location is \fI$XDG_CONFIG_HOME/reln/config.bash\fR. If \fIXDG_CONFIG_HOME\fR is not set, it defaults to \fI~/.config\fR.
+
+.SH AUTHOR
+
+Alex Rogers <https://github.com/linguisticmind>
+
+.SH HOMEPAGE
+
+<https://github.com/linguisticmind/reln>
+
+.SH COPYRIGHT
+
+Copyright © 2023 Alex Rogers. License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+
+This is free software: you are free to change and redistribute it. There is NO WARRANTY, to the extent permitted by law.

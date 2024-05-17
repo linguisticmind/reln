@@ -1,0 +1,678 @@
+#!/usr/bin/env bash
+
+# reln - recreate symlinks adjusting paths to their targets
+# copyright (c) 2024  Alex Rogers (https://github.com/linguisticmind)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+version=0.1.0
+
+getopt -T > /dev/null
+[[ $? != 4 ]] && { printf '[%s] %s\n' "${BASH_SOURCE##*/}" 'Enhanced getopt is required to run this script.' >&2; exit 1; }
+
+help='reln [<options>] <link|file> <dir|link>
+reln [<options>] <link|file> ... <dir> 
+
+-r, --run
+        Perform the specified operations instead of 
+        simulating them.
+
+-R, --no-run
+        Simulate the specified operations instead of 
+        performing them.
+
+-p, --print-cmd
+        Print a preview of the commands to be executed.
+
+-P, --no-print-cmd
+        Do not print a preview of the commands to be 
+        executed.
+
+-k, --keep-original
+        Keep original symlinks.
+
+-K, --no-keep-original
+        Do not keep original symlinks.
+
+-y, --overwrite
+        Overwrite already existing files.
+
+-Y, --no-overwrite
+        Do not overwrite already existing files.
+
+-m, --mode={link|relink}
+        Mode of operation.
+
+-l, --link-type={relative|absolute|auto}
+        Type of links to create.
+
+--link-type-auto-files-method={fallback|auto}
+        Method for creating links when -l, --link-type is 
+        `auto`, and <link|file> is a non-link file.
+
+--link-type-auto-files-fallback={relative|absolute}
+        Type of link to <file> when 
+        --link-type-auto-files-method is `fallback`.
+
+-L, --dereference-targets[={<integer>|inf}]
+        Dereference link targets to a specified level.
+
+-c, --color
+        Colorize the output.
+
+-C, --no-color
+        Disable colorization of the output.
+
+-h, --help
+        Print help.
+
+-V, --version
+        Print version information.
+'
+
+opts=$(getopt -n "${BASH_SOURCE##*/}" -o 'r,R,p,P,k,K,y,Y,m:,l:,L::,c,C,h,V,' -l 'run,no-run,print-cmd,no-print-cmd,keep-original,no-keep-original,overwrite,no-overwrite,mode:,link-type:,link-type-auto-files-method:,link-type-auto-files-fallback:,dereference-targets::,color,no-color,help,version,' -- "$@")
+
+[[ $? != 0 ]] && exit 1
+
+eval set -- "$opts"
+
+declare -A colors symbols
+
+opt_run=
+opt_print_cmd=
+opt_keep_original=
+opt_overwrite=
+opt_mode='relink'
+opt_link_type='auto'
+opt_link_type_auto_files_method='auto'
+opt_link_type_auto_files_fallback='relative'
+opt_dereference_targets=0
+opt_color=1
+
+colors[sim]='2'
+colors[report_num]=
+colors[report_file_file]='32'
+colors[report_file_dir]='34'
+colors[report_file_link]='36'
+colors[report_action_normal]=
+colors[report_action_none]=
+colors[report_action_destructive]='31'
+colors[report_symbol_warning]='33'
+colors[report_symbol_error]='31'
+colors[report_state_normal]=
+colors[print_cmd_indicator]='38;2;64;64;64'
+colors[print_cmd_cmd]='38;2;128;128;128'
+colors[print_cmd_opt]='38;2;196;196;196'
+colors[print_cmd_arg]='38;2;64;64;64'
+
+symbols[action_remove]='x'
+symbols[action_in_place]='='
+symbols[action_no_remove]='+'
+symbols[action_keep]='+'
+symbols[action_no_action]=':'
+symbols[action_link]='->'
+symbols[action_no_link]='!>'
+symbols[state_link]='->'
+symbols[print_cmd_indicator]='┃'
+
+test -f "${XDG_CONFIG_HOME:-$HOME/.config}"'/reln/config.bash' && source "$_"
+
+for k in "${!colors[@]}"; do
+  [[ $k != 'sim'* && ! ${colors[sim_$k]} ]] && colors[sim_$k]="${colors[sim]}"${colors[$k]:+';'"${colors[$k]}"}
+done
+
+for k in "${!colors[@]}"; do
+  colors[$k]=$'\x1b['"${colors[$k]}"'m'
+done
+
+while true; do
+  case $1 in
+    -r | --run ) opt_run=1; shift ;;
+    -R | --no-run ) opt_run=; shift ;;
+    -p | --print-cmd ) opt_print_cmd=1; shift ;;
+    -P | --no-print-cmd ) opt_print_cmd=; shift ;;
+    -k | --keep-original ) opt_keep_original=1; shift ;;
+    -K | --no-keep-original ) opt_keep_original=; shift ;;
+    -y | --overwrite ) opt_overwrite=1; shift ;;
+    -Y | --no-overwrite ) opt_overwrite=; shift ;;
+    -m | --mode ) opt_mode="$2"; shift 2 ;;
+    -l | --link-type ) opt_link_type="$2"; shift 2 ;;
+    --link-type-auto-files-method ) opt_link_type_auto_files_method="$2"; shift 2 ;;
+    --link-type-auto-files-fallback ) opt_link_type_auto_files_fallback="$2"; shift 2 ;;
+    -L | --dereference-targets ) opt_dereference_targets="${2:-inf}"; shift 2 ;;
+    -c | --color ) opt_color=1; shift ;;
+    -C | --no-color ) opt_color=; shift ;;
+    -h | --help ) printf '%s\n' "$help"; exit ;;
+    -V | --version ) printf '%s\n' "$version"; exit ;;
+    -- ) shift; break ;;
+    * ) printf '[%s] %s\n' "${BASH_SOURCE##*/}" 'Internal error: unable to parse option `'"$1"'`.' >&2; exit 1 ;;
+  esac
+done
+
+shopt -s extglob
+
+had_errors=
+
+case $opt_mode in
+  link | relink ) ;;
+  * )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Invalid argument to `-m, --mode`: '"${opt_mode@Q}"'. Allowed values are `link` and `relink`.' >&2
+    had_errors=1
+  ;;
+esac
+
+case $opt_link_type in
+  relative | absolute | auto ) ;;
+  * )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Invalid argument to `-t, --link-type`: '"${opt_link_type@Q}"'. Allowed values are `relative`, `absolute`, and `auto`.' >&2
+    had_errors=1
+  ;;
+esac
+
+case $opt_link_type_auto_files_method in
+  fallback | auto ) ;;
+  * )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Invalid argument to `--link-type-auto-files-method`: '"${opt_link_type_auto_files_method@Q}"'. Allowed values are `fallback` and `auto`.' >&2
+    had_errors=1
+  ;;
+esac
+
+case $opt_link_type_auto_files_fallback in
+  relative | absolute ) ;;
+  * )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Invalid argument to `--link-type-auto-files-fallback`: '"${opt_link_type_auto_files_fallback@Q}"'. Allowed values are `relative` and `absolute`.' >&2
+    had_errors=1
+  ;;
+esac
+
+case $opt_dereference_targets in
+  +([0-9]) | inf ) ;;
+  * )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Invalid optional argument to `-L, --dereference-targets`: '"${opt_dereference_targets@Q}"'. Only integer values greater or equal to zero, and `inf` or an empty string are allowed.' >&2
+    had_errors=1
+  ;;
+esac
+
+case $# in
+  0 )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'No arguments passed.' >&2
+    had_errors=1
+  ;;
+  1 )
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'No destination directory specified.' >&2
+    had_errors=1
+  ;;
+esac
+
+dest_dir= dest_name=
+if [[ $# -ge 2 ]]; then
+  if [[ $# = 2 ]]; then
+    case $2 in
+      */ ) dest_dir="$2" ;;
+      */* ) dest_dir=$(dirname "$2") dest_name=$(basename "$2") ;;
+      * ) [[ -d $2 ]] && dest_dir="$2" || dest_dir='.' dest_name="$2" ;;
+    esac
+    dest_dir="${dest_dir//+(\/)/\/}"
+  else
+    dest_dir="${!#//+(\/)/\/}"
+  fi
+  set -- "${@:1:$(($# - 1))}"
+fi
+
+for arg; do
+  if [[ ! -e $arg ]]; then
+    printf \
+      ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'File '"${arg@Q}"' does not exist.' >&2
+    had_errors=1
+  fi
+done
+
+if [[ $dest_dir && ! -d $dest_dir ]]; then
+  printf \
+    ${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+    "${BASH_SOURCE##*/}" \
+    'Destination directory '"${dest_dir@Q}"' does not exist or is not a directory.' >&2
+  had_errors=1
+fi
+
+if [[ $had_errors ]]; then
+  exit 1
+fi
+
+if [[ ! $opt_run ]]; then
+  printf \
+    ${opt_color:+'\x1b[2m'}'[%s] %s'${opt_color:+'\x1b[22m'}'\n' \
+    "${BASH_SOURCE##*/}" \
+    'Simulating.' >&2
+else
+  printf \
+    ${opt_color:+'\x1b[32m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+    "${BASH_SOURCE##*/}" \
+    'Running.' >&2
+fi
+
+no_run=
+[[ ! $opt_run ]] && no_run=1
+
+symbols[action_remove]=${opt_color:+"${colors[${no_run:+sim_}report_action_destructive]}"}"${symbols[action_remove]}"${opt_color:+$'\x1b[0m'}
+symbols[action_in_place]=${opt_color:+"${colors[${no_run:+sim_}report_action_destructive]}"}"${symbols[action_in_place]}"${opt_color:+$'\x1b[0m'}
+symbols[action_no_remove]=${opt_color:+"${colors[${no_run:+sim_}report_action_normal]}"}"${symbols[action_no_remove]}"${opt_color:+$'\x1b[0m'}
+symbols[action_keep]=${opt_color:+"${colors[${no_run:+sim_}report_action_normal]}"}"${symbols[action_keep]}"${opt_color:+$'\x1b[0m'}
+symbols[action_no_action]=${opt_color:+${no_run:+"${colors[${no_run:+sim_}report_action_none]}"}}"${symbols[action_no_action]}"${opt_color:+$'\x1b[0m'}
+symbols[action_link]=${opt_color:+${no_run:+"${colors[${no_run:+sim_}report_action_normal]}"}}"${symbols[action_link]}"${opt_color:+$'\x1b[0m'}
+
+declare -A widths=(
+  [arg]=
+  [link_dest]=
+  [print_cmd_indicator]="$((${##} - $(<<<"${symbols[print_cmd_indicator]}" wc -L) + $(printf '%s' "${symbols[print_cmd_indicator]}" | wc -c)))"
+)
+
+declare -A duplicates=() \
+           link_targets_old=() link_dirs_link_targets_old=() \
+           link_targets_all=() \
+           link_targets_new=() \
+           link_dests=() \
+           link_actions_in_place=() \
+           msgs_symbols_actions_on_orig=() msgs_tails_link_targets=() \
+           removal_revision_args=() removal_revision_args_test=() \
+           link_dests_duplicates=() link_dests_duplicates_lists=()
+
+for ((i=1; i<="$#"; i++)); do
+
+  arg_key_normalized=$(realpath --no-symlinks "${!i}")
+
+  if [[ ${link_dests[$arg_key_normalized]} ]]; then
+    duplicates[$arg_key_normalized]=$'\n'"$(printf '[%s] %s' "$i" "${!i@Q}")""${duplicates[$arg_key_normalized]}"
+  fi
+
+  arg_width=$(<<<"${!i@Q}" wc -L)
+  [[ $arg_width -gt ${widths[arg]} ]] && widths[arg]="$arg_width"
+
+  if [[ -L ${!i} ]]; then
+
+    n=0
+
+    while [[ ! ${link_dirs_link_targets_old[${!i}]} || -L ${link_dirs_link_targets_old[${!i}]} ]]; do
+
+      [[ $opt_dereference_targets != 'inf' && $n -gt $opt_dereference_targets ]] && break
+
+      [[ $n = 0 ]] && link_targets_old[${!i}]=$(readlink "${!i}") || link_targets_old[${!i}]=$(readlink "${link_dirs_link_targets_old[${!i}]}")
+      [[ ${link_targets_old[${!i}]} != /* ]] && link_dirs_link_targets_old[${!i}]="$(dirname "${!i}")"'/'"${link_targets_old[${!i}]}" || link_dirs_link_targets_old[${!i}]="${link_targets_old[${!i}]}"
+
+      [[ $n = 0 ]] && link_targets_all[$(realpath --no-symlinks "${link_dirs_link_targets_old[${!i}]}")]+="$(printf '[%s] %s' "$i" "${!i@Q}")"$'\n'
+
+      ((n++))
+
+    done
+
+  fi
+
+  if [[ ! -L ${!i} || $opt_mode = 'link' ]]; then
+
+    [[ ($opt_link_type = 'auto' && ( \
+         ($opt_link_type_auto_files_method = 'auto' && ${!i} != /*) || \
+         ($opt_link_type_auto_files_method = 'fallback' && $opt_link_type_auto_files_fallback = 'relative') \
+       )) || $opt_link_type = 'relative' ]] &&
+      link_targets_new[${!i}]=$(realpath --no-symlinks --relative-to "$dest_dir" "${!i}") ||
+      link_targets_new[${!i}]=$(realpath --no-symlinks "${!i}")
+
+  else
+
+    [[ ($opt_link_type = 'auto' && ${link_targets_old[${!i}]} != /*) || $opt_link_type = 'relative' ]] &&
+      link_targets_new[${!i}]=$(realpath --no-symlinks --relative-to "$dest_dir" "${link_dirs_link_targets_old[${!i}]:-${!i}}") ||
+      link_targets_new[${!i}]=$(realpath --no-symlinks "${link_dirs_link_targets_old[${!i}]:-${!i}}")
+
+  fi
+
+  link_dests[$arg_key_normalized]="$dest_dir"'/'"${dest_name:-$(basename "${!i}")}"
+  link_dests[$arg_key_normalized]="${link_dests[$arg_key_normalized]//+(\/)/\/}"
+  link_dests_duplicates[${link_dests[$arg_key_normalized]}]=$'\n'"$(printf '[%s] %s' "$i" "${!i@Q}")""${link_dests_duplicates[${link_dests[$arg_key_normalized]}]}"
+
+  link_dest_width=$(<<<"${link_dests[$arg_key_normalized]@Q}" wc -L)
+  [[ $link_dest_width -gt ${widths[link_dest]} ]] && widths[link_dest]="$link_dest_width"
+
+  case $opt_mode in
+    link ) msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_no_action]}" ;;
+    relink )
+      if [[ -L ${!i} ]]; then
+        if [[ ! $(realpath --no-symlinks "${!i}") = $(realpath --no-symlinks "${link_dests[$arg_key_normalized]}") ]]; then 
+          if [[ ! $opt_keep_original ]]; then
+            msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_remove]}"
+            if [[ ! $opt_dereference_targets = 'inf' ]]; then
+              removal_revision_args[$arg_key_normalized]=1
+              [[ -L ${link_targets_new[${!i}]} ]] && removal_revision_args_test[$(realpath --no-symlinks "${link_targets_new[${!i}]}")]+="$(printf '[%s] %s' "$i" "${!i@Q}")"$'\n'
+            fi
+          else
+            msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_keep]}"
+          fi
+        else
+          msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_in_place]}"
+          link_actions_in_place[$i]=1
+        fi
+      else
+        msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_no_action]}"
+      fi
+    ;;
+  esac
+
+  link_dir= link_target= link_dir_link_target="$dest_dir"'/'"${link_targets_new[${!i}]}"
+
+  while [[ -L $link_dir_link_target ]]; do
+
+    link_dir="$(dirname "$link_dir_link_target")"
+    link_target="$(readlink "$link_dir_link_target")"
+    link_dir_link_target="$link_dir"'/'"$link_target"
+
+    [[ ! $opt_keep_original && -L $link_dir_link_target ]] && removal_revision_args_test[$(realpath --no-symlinks "$link_dir_link_target")]+="$(printf '[%s] %s' "$i" "${!i@Q}")"$'\n'
+
+    link_targets_all[$(realpath --no-symlinks "$link_dir_link_target")]+="$(printf '[%s] %s' "$i" "${!i@Q}")"$'\n'
+
+    color_target=()
+    if [[ ! -L $link_dir_link_target ]]; then
+      [[ ! -d $link_dir_link_target ]] && color_target="${colors[${no_run:+sim_}report_file_file]}" || color_target="${colors[${no_run:+sim_}report_file_dir]}"
+    else
+      color_target="${colors[${no_run:+sim_}report_file_link]}"
+    fi
+
+    msgs_tails_link_targets[$arg_key_normalized]+=$(printf ' '${opt_color:+${no_run:+"${colors[${no_run:+sim_}report_state_normal]}"}}'%s'${opt_color:+$'\x1b[0m'}' '${opt_color:+"$color_target"}'%s'${opt_color:+$'\x1b[0m'} "${symbols[state_link]}" "${link_target//\'/\'\\\'\'}")
+
+  done
+
+done
+
+for arg_key_normalized in "${!removal_revision_args[@]}"; do
+  [[ ${removal_revision_args_test[$arg_key_normalized]} ]] && msgs_symbols_actions_on_orig[$arg_key_normalized]="${symbols[action_no_remove]}"
+done
+
+for link_dest in "${!link_dests_duplicates[@]}"; do
+  [[ ${link_dests_duplicates[$link_dest]#$'\n'} != *$'\n'* ]] && unset 'link_dests_duplicates['"$link_dest"']' || link_dests_duplicates[$link_dest]="${link_dests_duplicates[$link_dest]#$'\n'*$'\n'}"
+done
+
+had_link_creation_errors=
+
+for ((i=1; i<="$#"; i++)); do
+
+  arg_key_normalized=$(realpath --no-symlinks "${!i}")
+
+  color_arg=()
+  if [[ ! -L ${!i} ]]; then
+    [[ ! -d ${!i} ]] && color_arg="${colors[${no_run:+sim_}report_file_file]}" || color_arg="${colors[${no_run:+sim_}report_file_dir]}"
+  else
+    color_arg="${colors[${no_run:+sim_}report_file_link]}"
+  fi
+
+  color_target=()
+  if [[ ! -L $dest_dir/${link_targets_new[${!i}]} ]]; then
+    [[ ! -d $dest_dir/${link_targets_new[${!i}]} ]] && color_target="${colors[${no_run:+sim_}report_file_file]}" || color_target="${colors[${no_run:+sim_}report_file_dir]}"
+  else
+    color_target="${colors[${no_run:+sim_}report_file_link]}"
+  fi
+
+  color_symbol_link=() symbol_link="${symbols[action_link]}" overwrite=
+
+  warning_duplicate= warning_duplicate_list="${duplicates[$arg_key_normalized]#$'\n'}"
+  error_will_not_overwrite_file_with_link_to_itself=
+  error_will_not_overwrite_file_referenced_by_other_links= error_will_not_overwrite_file_referenced_by_other_links_exception= error_will_not_overwrite_file_referenced_by_other_links_list="${link_targets_all[$(realpath --no-symlinks "${link_dests[$arg_key_normalized]}")]%$'\n'}"
+  error_duplicate_dest= error_duplicate_dest_list=
+  error_file_already_exists=
+
+  if [[ $warning_duplicate_list ]]; then
+
+    duplicates[$arg_key_normalized]="${duplicates[$arg_key_normalized]%$'\n'*}"
+
+    color_symbol_link="${colors[${no_run:+sim_}report_symbol_warning]}" symbol_link="${symbols[action_no_link]}"
+    warning_duplicate=1
+
+  elif [[ ! -L ${!i} && ! -L ${link_dests[$arg_key_normalized]} && ${!i} -ef ${link_dests[$arg_key_normalized]} ]]; then
+
+    color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
+    error_will_not_overwrite_file_with_link_to_itself=1
+
+  elif [[ $error_will_not_overwrite_file_referenced_by_other_links_list ]]; then
+
+    if [[ ! ${!i} -ef ${link_dests[$arg_key_normalized]} ]]; then
+      color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
+    else
+      if [[ ! $opt_overwrite ]]; then
+        color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
+        error_file_already_exists=1
+      else
+        color_symbol_link="${colors[${no_run:+sim_}report_symbol_warning]}" symbol_link="${symbols[action_link]}"
+        overwrite=1
+      fi
+      error_will_not_overwrite_file_referenced_by_other_links_exception=1
+    fi
+
+    error_will_not_overwrite_file_referenced_by_other_links=1
+
+  elif [[ ${link_dests_duplicates[${link_dests[$arg_key_normalized]}]} ]]; then
+
+    if [[ ! ${link_dests_duplicates_lists[${link_dests[$arg_key_normalized]}]+_} ]]; then
+      link_dests_duplicates_lists[${link_dests[$arg_key_normalized]}]=
+    else
+      link_dests_duplicates_lists[${link_dests[$arg_key_normalized]}]=$'\n'"${link_dests_duplicates[${link_dests[$arg_key_normalized]}]##*$'\n'}""${link_dests_duplicates_lists[${link_dests[$arg_key_normalized]}]}"
+      link_dests_duplicates[${link_dests[$arg_key_normalized]}]="${link_dests_duplicates[${link_dests[$arg_key_normalized]}]%$'\n'*}"
+    fi
+
+    error_duplicate_dest_list="${link_dests_duplicates_lists[${link_dests[$arg_key_normalized]}]#$'\n'}"
+
+    if [[ $error_duplicate_dest_list ]]; then
+      color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
+      error_duplicate_dest=1
+    fi
+
+  elif [[ -e ${link_dests[$arg_key_normalized]} ]]; then
+
+    if [[ ! $opt_overwrite ]]; then
+      color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
+      error_file_already_exists=1
+    else
+      overwrite=1
+    fi
+
+  fi
+
+  color_symbol_action_on_orig=()
+
+  warning_will_not_remove_link_referenced_by_other_links= warning_will_not_remove_link_referenced_by_other_links_exception= warning_will_not_remove_link_list="${removal_revision_args_test[$arg_key_normalized]%$'\n'}"
+
+  if [[ $warning_will_not_remove_link_list ]]; then
+
+    if [[ ! ${!i} -ef ${link_dests[$arg_key_normalized]} ]]; then
+      color_symbol_action_on_orig="${colors[${no_run:+sim_}report_symbol_warning]}"
+    else
+      warning_will_not_remove_link_referenced_by_other_links_exception=1
+    fi
+
+    warning_will_not_remove_link_referenced_by_other_links=1
+
+  fi
+
+  format_str=${opt_color:+"${colors[${no_run:+sim_}report_num]}"}'%*s'${opt_color:+$'\x1b[0m'}' '
+  format_str+=${opt_color:+"$color_arg"}'%-*s'${opt_color:+$'\x1b[0m'}' '
+  format_str+=${opt_color:+"$color_symbol_action_on_orig"}'%s'${opt_color:+$'\x1b[0m'}' '
+  format_str+=${opt_color:+"${colors[${no_run:+sim_}report_file_link]}"}'%-*s'${opt_color:+$'\x1b[0m'}' '
+  format_str+=${opt_color:+"$color_symbol_link"}'%s'${opt_color:+$'\x1b[0m'}' '
+  format_str+=${opt_color:+"$color_target"}'%s'${opt_color:+$'\x1b[0m'}
+  format_str+='%s\n'
+
+  printf \
+    "$format_str" \
+    "${##}"                "$i" \
+    "${widths[arg]}"       "${!i@Q}" \
+                           "${msgs_symbols_actions_on_orig[$arg_key_normalized]}" \
+    "${widths[link_dest]}" "${link_dests[$arg_key_normalized]@Q}" \
+                           "$symbol_link" \
+                           "${link_targets_new[${!i}]@Q}" \
+                           "${msgs_tails_link_targets[$arg_key_normalized]}"
+
+  cmd_args_ln=() cmd_args_unlink=()
+
+  ln_exit_status=
+
+  function print_msg_error_will_not_overwrite_file_referenced_by_other_links_exception {
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[33m'}'[%s] %s: %s\n'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}} \
+      "${BASH_SOURCE##*/}" \
+      'Editing '"${link_dests[$arg_key_normalized]@Q}"' in place, so will proceed even though it is referenced by other links in this operation' \
+      "${error_will_not_overwrite_file_referenced_by_other_links_list//$'\n'/, }"
+  }
+
+  if [[ $warning_duplicate ]]; then
+
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[33m'}'[%s] %s: %s\n'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}} \
+      "${BASH_SOURCE##*/}" \
+      'Preventing duplicate operation. Superceded by' \
+      "${warning_duplicate_list//$'\n'/, }" >&2
+
+  elif [[ $error_will_not_overwrite_file_with_link_to_itself ]]; then
+
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'Will not overwrite '"${link_dests[$arg_key_normalized]@Q}"' with a symbolic link to itself.' >&2
+
+    had_link_creation_errors=1
+
+  elif [[ $error_will_not_overwrite_file_referenced_by_other_links && ! $error_will_not_overwrite_file_referenced_by_other_links_exception ]]; then
+
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[31m'}'[%s] %s: %s\n'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}} \
+      "${BASH_SOURCE##*/}" \
+      'Will not overwrite '"${link_dests[$arg_key_normalized]@Q}"' because it is referenced by other links in this operation' \
+      "${error_will_not_overwrite_file_referenced_by_other_links_list//$'\n'/, }"
+
+    had_link_creation_errors=1
+
+  elif [[ $error_duplicate_dest ]]; then
+
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[31m'}'[%s] %s: %s\n'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}} \
+      "${BASH_SOURCE##*/}" \
+      'Will not write to '"${link_dests[$arg_key_normalized]@Q}"' because this destination has been used previously in this operation' \
+      "${error_duplicate_dest_list//$'\n'/, }"
+
+    had_link_creation_errors=1
+
+  elif [[ $error_file_already_exists ]]; then
+
+    [[ $error_will_not_overwrite_file_referenced_by_other_links_exception ]] && print_msg_error_will_not_overwrite_file_referenced_by_other_links_exception
+
+    printf \
+      ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[31m'}'[%s] %s'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}}'\n' \
+      "${BASH_SOURCE##*/}" \
+      'File '"${link_dests[$arg_key_normalized]@Q}"' already exists. Pass `-y, --overwrite` to overwrite.' >&2
+
+    had_link_creation_errors=1
+
+  else
+
+    [[ $error_will_not_overwrite_file_referenced_by_other_links_exception ]] && print_msg_error_will_not_overwrite_file_referenced_by_other_links_exception
+
+    cmd_args_ln=(ln -s${overwrite:+f} "${link_targets_new[${!i}]}" "${link_dests[$arg_key_normalized]}")
+
+    if [[ $opt_print_cmd && ${cmd_args_ln[@]} ]]; then
+
+      format_str=${opt_color:+"${colors[${no_run:+sim_}print_cmd_indicator]}"}'%*s'${opt_color:+$'\x1b[0m'}' '
+      format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_cmd]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+      format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_opt]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+      format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+      format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}
+      format_str+='\n'
+
+      printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_ln[0]}" "${cmd_args_ln[1]}" "${cmd_args_ln[2]@Q}" "${cmd_args_ln[3]@Q}"
+
+    fi
+
+    if [[ $opt_run ]]; then
+      "${cmd_args_ln[@]}"
+      ln_exit_status="$?"
+    fi
+
+  fi
+
+  if [[ -L ${!i} ]]; then
+
+    if [[ $warning_will_not_remove_link_referenced_by_other_links && ! $warning_will_not_remove_link_referenced_by_other_links_exception ]]; then
+
+      printf \
+        ${opt_color:+${no_run:+"${colors[sim]}"}}${opt_color:+'\x1b[33m'}'[%s] %s: %s\n'${opt_color:+'\x1b[39m'}${opt_color:+${no_run:+$'\x1b[0m'}} \
+        "${BASH_SOURCE##*/}" \
+        'Will not remove link '"${!i@Q}"' because it is referenced by other links in this operation' \
+        "${warning_will_not_remove_link_list//$'\n'/, }" >&2
+
+    else
+
+      [[ $opt_mode = 'relink' && ${cmd_args_ln[@]} && (! $ln_exit_status || $ln_exit_status = 0) && ! $opt_keep_original && ! $warning_will_not_remove_link_referenced_by_other_links_exception && ! ${link_actions_in_place[$i]} ]] && cmd_args_unlink=(unlink "${!i}")
+
+      if [[ $opt_print_cmd && ${cmd_args_unlink[@]} ]]; then
+
+        format_str=${opt_color:+"${colors[${no_run:+sim_}print_cmd_indicator]}"}'%*s'${opt_color:+$'\x1b[0m'}' '
+        format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_cmd]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+        format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}
+        format_str+='\n'
+
+        printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_unlink[0]}" "${cmd_args_unlink[1]@Q}"
+
+      fi
+
+      if [[ $opt_run ]]; then
+        "${cmd_args_unlink[@]}"
+      fi
+
+    fi
+
+  fi
+
+done
+
+if [[ ! $opt_run ]]; then
+  printf \
+    ${opt_color:+'\x1b[2m'}'[%s] %s'${opt_color:+'\x1b[22m'}'\n' \
+    "${BASH_SOURCE##*/}" \
+    'Simulation complete.' >&2
+else
+  printf \
+    ${opt_color:+'\x1b[32m'}'[%s] %s'${opt_color:+'\x1b[39m'}'\n' \
+    "${BASH_SOURCE##*/}" \
+    'Done.' >&2
+fi
+
+if [[ $had_link_creation_errors ]]; then
+  exit 2
+fi
