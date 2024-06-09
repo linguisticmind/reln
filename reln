@@ -129,7 +129,7 @@ symbols[print_cmd_indicator]='┃'
 test -f "${XDG_CONFIG_HOME:-$HOME/.config}"'/reln/config.bash' && source "$_"
 
 for k in "${!colors[@]}"; do
-  [[ $k != 'sim'* && ! ${colors[sim_$k]} ]] && colors[sim_$k]="${colors[sim]}"${colors[$k]:+';'"${colors[$k]}"}
+  [[ $k != 'sim'* && ! ${colors[sim_$k]} ]] && colors[sim_$k]="${colors[sim]}"${colors[$k]:+${colors[sim]:+';'}"${colors[$k]}"}
 done
 
 for k in "${!colors[@]}"; do
@@ -604,18 +604,19 @@ for ((i=1; i<="$#"; i++)); do
 
     [[ $error_will_not_overwrite_file_referenced_by_other_links_exception ]] && print_msg_error_will_not_overwrite_file_referenced_by_other_links_exception
 
-    cmd_args_ln=(ln -s${overwrite:+f} "${link_targets_new[${!i}]}" "${link_dests[$arg_key_normalized]}")
+    cmd_args_ln=(ln -s${overwrite:+f} -- "${link_targets_new[${!i}]}" "${link_dests[$arg_key_normalized]}")
 
     if [[ $opt_print_cmd && ${cmd_args_ln[@]} ]]; then
 
       format_str=${opt_color:+"${colors[${no_run:+sim_}print_cmd_indicator]}"}'%*s'${opt_color:+$'\x1b[0m'}' '
       format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_cmd]}"}'%s'${opt_color:+$'\x1b[0m'}' '
       format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_opt]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+      format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_opt]}"}'%s'${opt_color:+$'\x1b[0m'}' '
       format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}' '
       format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}
       format_str+='\n'
 
-      printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_ln[0]}" "${cmd_args_ln[1]}" "${cmd_args_ln[2]@Q}" "${cmd_args_ln[3]@Q}"
+      printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_ln[0]}" "${cmd_args_ln[1]}" "${cmd_args_ln[2]}" "${cmd_args_ln[3]@Q}" "${cmd_args_ln[4]@Q}"
 
     fi
 
@@ -638,16 +639,17 @@ for ((i=1; i<="$#"; i++)); do
 
     else
 
-      [[ $opt_mode = 'relink' && ${cmd_args_ln[@]} && (! $ln_exit_status || $ln_exit_status = 0) && ! $opt_keep_original && ! $warning_will_not_remove_link_referenced_by_other_links_exception && ! ${link_actions_in_place[$i]} ]] && cmd_args_unlink=(unlink "${!i}")
+      [[ $opt_mode = 'relink' && ${cmd_args_ln[@]} && (! $ln_exit_status || $ln_exit_status = 0) && ! $opt_keep_original && ! $warning_will_not_remove_link_referenced_by_other_links_exception && ! ${link_actions_in_place[$i]} ]] && cmd_args_unlink=(unlink -- "${!i}")
 
       if [[ $opt_print_cmd && ${cmd_args_unlink[@]} ]]; then
 
         format_str=${opt_color:+"${colors[${no_run:+sim_}print_cmd_indicator]}"}'%*s'${opt_color:+$'\x1b[0m'}' '
         format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_cmd]}"}'%s'${opt_color:+$'\x1b[0m'}' '
+        format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_opt]}"}'%s'${opt_color:+$'\x1b[0m'}' '
         format_str+=${opt_color:+"${colors[${no_run:+sim_}print_cmd_arg]}"}'%s'${opt_color:+$'\x1b[0m'}
         format_str+='\n'
 
-        printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_unlink[0]}" "${cmd_args_unlink[1]@Q}"
+        printf "$format_str" "${widths[print_cmd_indicator]}" "${symbols[print_cmd_indicator]}" "${cmd_args_unlink[0]}" "${cmd_args_unlink[1]}" "${cmd_args_unlink[2]@Q}"
 
       fi
 
