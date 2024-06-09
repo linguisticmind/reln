@@ -8,7 +8,7 @@
     </tr>
     <tr>
         <td>
-            <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.1">0.1.1</a></td>
+            <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.1">0.1.1</a>
         </td>
         <td>
             2024-06-09
@@ -23,7 +23,7 @@
     </tr>
     <tr>
         <td>
-            <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.0">0.1.0</a></td>
+            <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.0">0.1.0</a>
         </td>
         <td>
             2024-05-17
