@@ -8,6 +8,19 @@
     </tr>
     <tr>
         <td>
+            <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.2">0.1.2</a>
+        </td>
+        <td>
+            2024-06-18
+        </td>
+        <td>
+            <p>
+                Fixed incorrect handling of the target argument when only two non-option arguments are passed, and the target argument is a path to a directory that does not have a trailing forward slash.
+            </p>
+        </td>
+    </tr>
+    <tr>
+        <td>
             <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.1">0.1.1</a>
         </td>
         <td>
