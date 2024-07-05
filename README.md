@@ -23,7 +23,7 @@ Video tutorial:
             <a href="https://github.com/linguisticmind/reln/releases/tag/v0.1.3">0.1.3</a>
         </td>
         <td>
-            2024-07-04
+            2024-07-05
         </td>
         <td>
             <p>
