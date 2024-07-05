@@ -5,7 +5,7 @@ reln \- recreate symlinks adjusting paths to their targets
 
 .SH SYNOPSIS
 .SY
-\fBreln\fR [<options>] <link|file> <dir|link>
+\fBreln\fR [<options>] <link|file> <dir|link>[/]
 
 \fBreln\fR [<options>] <link|file> ... <dir> 
 .YS
@@ -13,11 +13,13 @@ reln \- recreate symlinks adjusting paths to their targets
 .SH DESCRIPTION
 \fBreln\fR allows the user to copy symlinks to a specified location, and adjust their targets such that they still point to the same files as the original links. The original links may then be removed. This allows the symlinks to be moved and copied in effectively the same way as one would do with the \fBmv\fR and \fBcp\fR commands when moving and copying regular files and directories, without needing to worry about adjusting the targets or the links according to their new location.
 
-\fBreln\fR also provides options for converting relative target paths to absolute ones, and vice versa. Entirely new symlinks can also be created with \fBreln\fR by passing regular files or directories instead of links as positional arguments.
+\fBreln\fR also provides options for converting relative target paths to absolute ones, and vice versa. Entirely new symlinks can also be created with \fBreln\fR by passing regular files or directories instead of links as non-option arguments.
 
-\fBreln\fR takes one or more links or non-link files as positional arguments (<link|file>), while the last positional argument following all the <link|file>s is the destination (<dir>, <dir|link>), i.e. the location for the new link(s).
+\fBreln\fR takes one or more links or non-link files as non-option arguments (<link|file>), while the last non-option argument following all the <link|file>s is the destination (<dir>, <dir|link>), i.e. the location for the new link(s).
 
-If two or more <link|file>s are passed, then the destination must be a directory (<dir>). If only one <link|file> is passed, then the second and last positional argument may also point to a new name for the link to be created (<dir|link>), in which case the provided path may include a path to a destination directory as well as the filename for the new link. In either case, the destination directory must exist.
+If two or more <link|file>s are passed, then the destination must be a directory (<dir>). If only one <link|file> is passed, then the second and last non-option argument may also point to a new name for the link to be created (<dir|link>), in which case the provided path may include a path to a destination directory as well as the filename for the new link. In either case, the destination directory must exist.
+
+In the case where only one <link|file> is passed, a trailing forward slash on the second and last non-option argument (<dir|link>) forces that argument to be treated as a directory (<dir>) rather than a link name (<link>). It is especially significant if the file passed as the second argument is a symbolic link pointing to a directory. Without a trailing forward slash, the symbolic link will be overwritten, or \fBreln\fR will throw an error \- depending on the state of \fB-y, --overwrite / -Y, --no-overwrite\fR; if a trailing forward slash is added, a new symbolic link will be put into the directory that the symbolic link passed as the second non-option argument is pointing to.
 
 .SH OPTIONS
 

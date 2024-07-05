@@ -91,7 +91,7 @@ NAME
        reln - recreate symlinks adjusting paths to their targets
 
 SYNOPSIS
-        reln [<options>] <link|file> <dir|link>
+        reln [<options>] <link|file> <dir|link>[/]
 
         reln [<options>] <link|file> ... <dir>
 
@@ -107,36 +107,47 @@ DESCRIPTION
        reln  also provides options for converting relative target paths to ab‐
        solute ones, and vice versa. Entirely new symlinks can also be  created
        with  reln  by passing regular files or directories instead of links as
-       positional arguments.
+       non-option arguments.
 
-       reln takes one or more links or non-link files as positional  arguments
-       (<link|file>),  while  the  last  positional argument following all the
+       reln takes one or more links or non-link files as non-option  arguments
+       (<link|file>),  while  the  last  non-option argument following all the
        <link|file>s is the destination (<dir>, <dir|link>), i.e. the  location
        for the new link(s).
 
        If  two or more <link|file>s are passed, then the destination must be a
        directory (<dir>). If only one <link|file> is passed, then  the  second
-       and  last positional argument may also point to a new name for the link
+       and  last non-option argument may also point to a new name for the link
        to be created (<dir|link>), in which case the provided path may include
        a  path  to a destination directory as well as the filename for the new
        link. In either case, the destination directory must exist.
 
+       In the case where only one <link|file> is passed,  a  trailing  forward
+       slash  on  the  second and last non-option argument (<dir|link>) forces
+       that argument to be treated as a directory (<dir>) rather than  a  link
+       name  (<link>).  It is especially significant if the file passed as the
+       second argument is a symbolic link pointing to a directory.  Without  a
+       trailing  forward slash, the symbolic link will be overwritten, or reln
+       will throw an error - depending on the state of -y, --overwrite  /  -Y,
+       --no-overwrite;  if  a  trailing forward slash is added, a new symbolic
+       link will be put into the directory that the symbolic  link  passed  as
+       the second non-option argument is pointing to.
+
 OPTIONS
    Passing arguments to options
-       Enhanced getopt syntax applies when passing options. There is  one  im‐
-       portant  point  to  highlight when it comes to passing options with re‐
+       Enhanced  getopt  syntax applies when passing options. There is one im‐
+       portant point to highlight when it comes to passing  options  with  re‐
        quired vs optional arguments.
 
-       In case of a short option, if an option takes  a  *required*  argument,
-       the  argument may be written as a separate parameter, *or* directly af‐
-       ter the option character. If an option takes  an  *optional*  argument,
+       In  case  of  a short option, if an option takes a *required* argument,
+       the argument may be written as a separate parameter, *or* directly  af‐
+       ter  the  option  character. If an option takes an *optional* argument,
        however, the argument *must* be written directly after the option char‐
        acter.
 
        In case of a long option, if an option takes a *required* argument, the
-       argument  may  be  written as a separate parameter, *or* directly after
-       the option name, separated by an equals sign (`=`). If an option  takes
-       an  *optional*  argument,  however, the argument *must* be writtent di‐
+       argument may be written as a separate parameter,  *or*  directly  after
+       the  option name, separated by an equals sign (`=`). If an option takes
+       an *optional* argument, however, the argument *must*  be  writtent  di‐
        rectly after the option name, separated by an equals sign (`=`).
 
                            Short option   Long option
@@ -144,8 +155,8 @@ OPTIONS
                            -o<value>      --option=<value>
        Optional argument   -o[<value>]    --option[=<value>]
 
-       Options that take optional arguments can be recognized in  the  options
-       list  below  by  their  <value> and the preceding equals sign being en‐
+       Options  that  take optional arguments can be recognized in the options
+       list below by their <value> and the preceding  equals  sign  being  en‐
        closed in square brackets:
 
        -o, --option[=<value>]
@@ -155,14 +166,14 @@ OPTIONS
               Perform the specified operations instead of simulating them.
 
        -R, --no-run
-              Simulate the specified operations instead  of  performing  them.
+              Simulate  the  specified  operations instead of performing them.
               This is the default.
 
        -p, --print-cmd
               Print a preview of the commands to be executed.
 
        -P, --no-print-cmd
-              Do  not  print a preview of the commands to be executed. This is
+              Do not print a preview of the commands to be executed.  This  is
               the default.
 
        -k, --keep-original
@@ -180,11 +191,11 @@ OPTIONS
        -m, --mode={link|relink}
               Mode of operation.
 
-              link   Create links  to  specified  <link|file>s  regardless  of
+              link   Create  links  to  specified  <link|file>s  regardless of
                      whether they are links or non-link files.
 
               relink (default)
-                     Relink  <link|file>s  if they are links, and create links
+                     Relink <link|file>s if they are links, and  create  links
                      to them if they are non-link files.
 
        -l, --link-type={relative|absolute|auto}
@@ -197,32 +208,32 @@ OPTIONS
                      Create absolute links.
 
               auto (default)
-                     If <link|file> is a link, create a link of the type  cor‐
-                     responding  to  the  type  of  the original link's target
+                     If  <link|file> is a link, create a link of the type cor‐
+                     responding to the type  of  the  original  link's  target
                      path. If <link|file> is a non-link file, create a link of
-                     the  type  that  is determined by --link-type-auto-files-
+                     the type that is  determined  by  --link-type-auto-files-
                      method.
 
        --link-type-auto-files-method={fallback|auto}
-              Method for creating links when -l, --link-type  is  `auto`,  and
+              Method  for  creating  links when -l, --link-type is `auto`, and
               <link|file> is a non-link file.
 
               fallback
                      Create a link of the type determined by --link-type-auto-
                      files-fallback.
 
-              auto   Create a link of the type corresponding to type  of  path
+              auto   Create  a  link of the type corresponding to type of path
                      to <file> passed to reln.
 
        --link-type-auto-files-fallback={relative|absolute}
-              Type  of  link  to  <file> when --link-type-auto-files-method is
+              Type of link to  <file>  when  --link-type-auto-files-method  is
               `fallback`. The default value is `relative`.
 
        -L, --dereference-targets[={<integer>|inf}]
               Dereference link targets to a specified level. The default value
               is `0`.
 
-              The  value  can be an integer greater than or equal to 0, `inf`,
+              The value can be an integer greater than or equal to  0,  `inf`,
               or no value. Omitting the value is equivalent to passing `inf`.
 
    Other
@@ -256,10 +267,10 @@ HOMEPAGE
        <https://github.com/linguisticmind/reln>
 
 COPYRIGHT
-       Copyright  ©  2023  Alex  Rogers.  License GPLv3+: GNU GPL version 3 or
+       Copyright © 2023 Alex Rogers. License GPLv3+:  GNU  GPL  version  3  or
        later <https://gnu.org/licenses/gpl.html>.
 
-       This is free software: you are free  to  change  and  redistribute  it.
+       This  is  free  software:  you  are free to change and redistribute it.
        There is NO WARRANTY, to the extent permitted by law.
 
 RELN 0.1.3                           2024                              RELN(1)
