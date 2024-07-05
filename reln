@@ -241,8 +241,8 @@ if [[ $# -ge 2 ]]; then
   if [[ $# = 2 ]]; then
     case $2 in
       */ ) dest_dir="$2" ;;
-      */* ) [[ -d $2 && ! -L $2 ]] && dest_dir="$2" || dest_dir=$(dirname "$2") dest_name=$(basename "$2") ;;
-      * ) [[ -d $2 && ! -L $2 ]] && dest_dir="$2" || dest_dir='.' dest_name="$2" ;;
+      */* ) [[ -d $2 && ! -L $2 ]] && dest_dir="$2" || { dest_dir=$(dirname "$2") dest_name=$(basename "$2"); [[ -L $2 ]] && ln_opt_no_dereference=1; } ;;
+      * ) [[ -d $2 && ! -L $2 ]] && dest_dir="$2" || { dest_dir='.' dest_name="$2"; [[ -L $2 ]] && ln_opt_no_dereference=1; } ;;
     esac
     dest_dir="${dest_dir//+(\/)/\/}"
   else
@@ -442,7 +442,7 @@ for ((i=1; i<="$#"; i++)); do
     color_target="${colors[${no_run:+sim_}report_file_link]}"
   fi
 
-  color_symbol_link=() symbol_link="${symbols[action_link]}" overwrite=
+  color_symbol_link=() symbol_link="${symbols[action_link]}" ln_opt_overwrite=
 
   warning_duplicate= warning_duplicate_list="${duplicates[$arg_key_normalized]#$'\n'}"
   error_will_not_overwrite_file_with_link_to_itself=
@@ -472,7 +472,7 @@ for ((i=1; i<="$#"; i++)); do
         error_file_already_exists=1
       else
         color_symbol_link="${colors[${no_run:+sim_}report_symbol_warning]}" symbol_link="${symbols[action_link]}"
-        overwrite=1
+        ln_opt_overwrite=1
       fi
       error_will_not_overwrite_file_referenced_by_other_links_exception=1
     fi
@@ -501,7 +501,7 @@ for ((i=1; i<="$#"; i++)); do
       color_symbol_link="${colors[${no_run:+sim_}report_symbol_error]}" symbol_link="${symbols[action_no_link]}"
       error_file_already_exists=1
     else
-      overwrite=1
+      ln_opt_overwrite=1
     fi
 
   fi
@@ -604,7 +604,7 @@ for ((i=1; i<="$#"; i++)); do
 
     [[ $error_will_not_overwrite_file_referenced_by_other_links_exception ]] && print_msg_error_will_not_overwrite_file_referenced_by_other_links_exception
 
-    cmd_args_ln=(ln -s${overwrite:+f} -- "${link_targets_new[${!i}]}" "${link_dests[$arg_key_normalized]}")
+    cmd_args_ln=(ln -s${ln_opt_overwrite:+f}${ln_opt_no_dereference:+n} -- "${link_targets_new[${!i}]}" "${link_dests[$arg_key_normalized]}")
 
     if [[ $opt_print_cmd && ${cmd_args_ln[@]} ]]; then
 
