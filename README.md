@@ -10,6 +10,8 @@ Video tutorial:
 
 [![Mindful Technology - reln, unln: move symlinks fixing paths to targets, delete symlinks *and* their targets, and more](https://img.youtube.com/vi/jAlPWsBIhMM/0.jpg)](https://www.youtube.com/watch?v=jAlPWsBIhMM)
 
+<a href='https://ko-fi.com/linguisticmind'><img src='https://github.com/linguisticmind/linguisticmind/raw/master/res/kofi/kofi_donate_1.svg' alt='Support me on Ko-fi' height='48'></a>
+
 ## Changelog
 
 <table>
